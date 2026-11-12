@@ -1,0 +1,50 @@
+<!doctype html>
+<meta charset="utf8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>html,body{margin:0;font:14px system-ui}[hidden]{display:none!important}img{max-width:100%}</style>
+<body>
+<script>
+// Local test harness: loads ../index.html with a fake `window.claude` whose `room` capability is
+// backed by BroadcastChannel, so several tabs on the same localhost origin can play together.
+// Add #drop to the URL to randomly lose 25% of incoming messages (tests the resend paths).
+(function(){
+  const peer=Math.random().toString(36).slice(2,10),drop=location.hash==='#drop'?0.25:0;
+  function makeRoom(name){
+    const bc=new BroadcastChannel('mock-'+name),subs=[],peers=new Map();let pres={};
+    const deliver=(m,mine)=>subs.forEach(s=>s.topic===m.topic&&s.fn({topic:m.topic,data:m.data,peer:m.peer,by:null,isMe:mine,sameTab:mine,kind:'viewer',guest:false}));
+    bc.onmessage=e=>{
+      const m=e.data;
+      if(m.k==='p'){peers.set(m.peer,{peer:m.peer,presence:m.presence,at:Date.now()});return}
+      if(m.k==='bye'){peers.delete(m.peer);return}
+      if(Math.random()<drop)return;
+      deliver(m,false);
+    };
+    const ann=()=>bc.postMessage({k:'p',peer,presence:pres}),iv=setInterval(ann,700);
+    return{name,
+      emit(topic,data){
+        const text=JSON.stringify(data);
+        if(new TextEncoder().encode(text).length>4096)return Promise.reject({code:'invalid_argument',message:'over 4 KiB'});
+        const m={k:'m',topic,data:JSON.parse(text),peer};bc.postMessage(m);setTimeout(()=>deliver(m,true),0);return Promise.resolve();
+      },
+      on(topic,fn){const s={topic,fn};subs.push(s);return()=>{const i=subs.indexOf(s);if(i>=0)subs.splice(i,1)}},
+      presence(p){Object.assign(pres,p);ann();return Promise.resolve()},
+      peers(){const now=Date.now();return[...peers.values()].filter(p=>now-p.at<2500).concat([{peer,presence:pres,isMe:true}])},
+      leave(){clearInterval(iv);bc.postMessage({k:'bye',peer});bc.close();return Promise.resolve()}};
+  }
+  const room={join:n=>Promise.resolve(makeRoom(n))};
+  window.claude={use:n=>Promise.resolve(n==='room'?room:null)};
+  const base=document.createElement('base');base.href='/';document.head.appendChild(base); // so assets/... resolves from the project root
+  fetch('/index.html').then(r=>r.text()).then(async t=>{
+    const tpl=document.createElement('template');tpl.innerHTML=t;
+    const scripts=[...tpl.content.querySelectorAll('script')];scripts.forEach(s=>s.remove());
+    document.body.appendChild(tpl.content);
+    for(const s of scripts){
+      await new Promise(res=>{
+        const n=document.createElement('script');
+        if(s.src){n.src=s.src;n.onload=res;n.onerror=res;document.body.appendChild(n)}
+        else{n.textContent=s.textContent;document.body.appendChild(n);res()}
+      });
+    }
+  });
+})();
+</script>

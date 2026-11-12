@@ -1,0 +1,3 @@
+# Downloaded asset packs (CC0, kenney.nl); only the files copied into assets/ are used.
+vendor/
+__pycache__/
