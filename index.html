@@ -39,7 +39,12 @@ canvas#view{position:fixed;inset:0;width:100%;height:100%;display:block}
 .windcap{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;text-align:center;text-shadow:0 1px 2px rgba(0,0,0,.6)}
 #feed{display:flex;flex-direction:column;gap:3px;align-items:center}
 #feed div{background:var(--panel);border-radius:8px;padding:3px 9px;font-size:12px;font-weight:600;text-align:center}
-#mute{pointer-events:auto;min-width:0;height:26px;padding:0 8px;font-size:11px}
+#mute,#surr{pointer-events:auto;min-width:0;height:26px;padding:0 8px;font-size:11px}
+#surr.warn{background:var(--red);border-color:#fff}
+.tlabel{font-family:var(--display);font-weight:800;font-size:12px;line-height:1.3;padding:0 8px;border-radius:8px;background:var(--blue);color:#fff;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.right .tlabel{background:var(--red)}
+.team input{font-family:var(--display);font-weight:800;font-size:16px;width:100%}
+.team.t0 input{color:var(--blue)}.team.t1 input{color:var(--red)}
 .bottom{display:flex;flex-direction:column;gap:6px;align-items:flex-end;max-width:760px;width:100%;margin:0 auto}
 #mini{width:136px;height:136px;border-radius:50%;background:var(--panel);border:2px solid var(--panel-line)}
 .console{pointer-events:auto;background:var(--panel);border:1px solid var(--panel-line);border-radius:14px;padding:8px 10px;display:flex;flex-direction:column;gap:6px;width:100%}
@@ -162,7 +167,8 @@ button:disabled{opacity:.4;cursor:default}
 #hud.touch2d .mid{gap:2px}
 #hud.touch2d #feed div{font-size:10px;padding:1px 7px}
 #hud.touch2d #powerTxt{font-size:10px}
-#hud.touch2d #mute{height:20px;font-size:9px;padding:0 6px}
+#hud.touch2d #mute,#hud.touch2d #surr{height:20px;font-size:9px;padding:0 6px}
+#hud.touch2d .tlabel{font-size:9px;padding:0 6px}
 #root.touch .tag{font-size:9px}
 #root.touch .tag .bar{width:36px;height:3px}
 #root.touch .dmg{font-size:18px}
@@ -194,6 +200,7 @@ button:disabled{opacity:.4;cursor:default}
       <span>Hướng <b id="rHead">0°</b></span>
       <span>Điểm rơi <b id="rRange">–</b></span>
       <span class="fuel">Xăng <span class="bar"><i id="fuelBar"></i></span></span>
+      <button id="surr" hidden>Đầu hàng</button>
       <button id="mute"></button>
     </div>
     <div id="power"><div id="powerFill"></div><div id="powerMark"></div><div id="powerTxt"></div></div>
@@ -246,8 +253,8 @@ button:disabled{opacity:.4;cursor:default}
     </div>
     <p class="note" id="lobMsg"></p>
     <div class="teams">
-      <div class="team t0"><h2>Đội Xanh</h2><div id="team0"></div></div>
-      <div class="team t1"><h2>Đội Đỏ</h2><div id="team1"></div></div>
+      <div class="team t0"><h2 id="tnText0">Đội Xanh</h2><input id="tnIn0" maxlength="16" placeholder="Đặt tên cho đội" autocomplete="off" aria-label="Tên đội Xanh" hidden><div id="team0"></div></div>
+      <div class="team t1"><h2 id="tnText1">Đội Đỏ</h2><input id="tnIn1" maxlength="16" placeholder="Đặt tên cho đội" autocomplete="off" aria-label="Tên đội Đỏ" hidden><div id="team1"></div></div>
     </div>
     <div class="row"><label for="modeSel">Chế độ</label><select id="modeSel"><option value="1">2D nhìn ngang, có ăn mây</option><option value="0">3D góc nhìn thứ nhất</option></select>
       <label for="mapSel">Bản đồ</label><select id="mapSel"></select>
@@ -273,7 +280,8 @@ button:disabled{opacity:.4;cursor:default}
   <div class="card">
     <h1 id="overTitle">Thắng!</h1>
     <p id="overText"></p>
-    <button class="go" id="again">Về phòng chờ</button>
+    <div class="row"><button class="go" id="rematch">Ván mới</button><button class="go" id="again">Về phòng chờ</button></div>
+    <p class="note" id="overNote"></p>
   </div>
 </div>
 
@@ -661,8 +669,10 @@ function gameInit(g){
   else{if(land2){scene.remove(land2);land2=null}genHeights(mapId,ts,pads,false);buildTerrain(mapId)}
   scene.fog.near=flat?700:260;scene.fog.far=flat?1800:720;camera.far=flat?2200:900;camera.updateProjectionMatrix();pan2d=0;
   G={g,id:g.id,map:mapId,d2:flat,tanks:[],shells:[],clouds:[],phase:'idle',turn:0,turnAt:-1,cur:-1,applied:0,log:[],last:[-1,-1],
-     wind:{dir:0,str:0,x:0,y:0,z:0},sw:{x:0,y:0,z:0},over:-1,deadline:0,settle:0};
-  $('mini').hidden=flat;
+     wind:{dir:0,str:0,x:0,y:0,z:0},sw:{x:0,y:0,z:0},over:-1,surr:-1,deadline:0,settle:0,
+     tn:[0,1].map(k=>cleanTeam(Array.isArray(g.teams)?g.teams[k]:'')||DEF_TEAM[k])};
+  Hs.sur=[[],[]];Hs.surPass=-1;surVoted='';surConfirm=0;prevSv=[0,0,0,0];
+  $('mini').hidden=flat;$('over').hidden=true;
   g.roster.forEach((p,i)=>{
     const team=i<3?0:1,type=int(p.tank,0,TANKS.length-1,0),T=TANKS[type],x=pads[i][0],z=pads[i][1];
     const items=Array.isArray(p.items)?p.items.slice(0,3).map(v=>int(v,0,ITEMS.length-1,0)):[];
@@ -680,6 +690,7 @@ function gameInit(g){
 function buildRoster(){
   for(const [el,team] of [[$('rosA'),0],[$('rosB'),1]]){
     el.innerHTML='';
+    const h=document.createElement('div');h.className='tlabel';h.textContent=G.tn[team];el.appendChild(h);
     G.tanks.filter(t=>t.team===team).forEach(t=>{
       const c=document.createElement('div');c.className='chip';
       c.innerHTML='<div class="nm"><span></span><span></span></div><div class="bar"><i></i></div>';
@@ -865,8 +876,14 @@ function tick(){
 
 // ---------- lobby / network state ----------
 let roomCap=null,dbCap=null,chan=null,unsub=[],L=null,lastHost=0,ignoreGame='',slotWish=-1,dbq=Promise.resolve(),lastDoc='',lastDocAt=0;
-const Hs={fired:false,botAt:0,plan:null,pos0:null,seen:{},beatAt:0};
-const my={name:clean(store.get('dp-name')||''),tank:0,char:0,items:[0,1,2],ready:false};
+const Hs={fired:false,botAt:0,plan:null,pos0:null,seen:{},beatAt:0,sur:[[],[]],surPass:-1};
+// Team names: whoever sits in a team's first slot names that team; it travels with their slot as `tn`.
+const DEF_TEAM=['Đội Xanh','Đội Đỏ'];
+const cleanTeam=s=>String(s==null?'':s).replace(/[\u0000-\u001f\u007f]/g,'').trim().slice(0,16);
+const lobbyTeam=k=>(L&&L.slots[k*3]&&L.slots[k*3].tn)||DEF_TEAM[k];
+const teamName=k=>G&&G.tn?G.tn[k]:DEF_TEAM[k];
+let surVoted='',surConfirm=0,prevSv=null;
+const my={name:clean(store.get('dp-name')||''),tank:0,char:0,items:[0,1,2],ready:false,tn:cleanTeam(store.get('dp-tname')||'')};
 try{const o=JSON.parse(store.get('dp-load')||'null');if(o){my.tank=int(o.tank,0,TANKS.length-1,0);my.char=int(o.char,0,CHARS.length-1,0);if(Array.isArray(o.items))my.items=[...new Set(o.items.map(v=>int(v,0,ITEMS.length-1,0)))].slice(0,3)}}catch(e){}
 const isHost=()=>!!L&&L.host===CID;
 function present(cid){
@@ -881,9 +898,9 @@ function note(t){$('lobMsg').textContent=t;$('menuMsg').textContent=t}
 function sanSlot(s){
   if(!s||typeof s!=='object')return null;
   const items=Array.isArray(s.items)?[...new Set(s.items.map(v=>int(v,0,ITEMS.length-1,0)))].slice(0,3):[];
-  return{cid:String(s.cid||'').slice(0,24),name:clean(s.name),tank:int(s.tank,0,TANKS.length-1,0),char:int(s.char,0,CHARS.length-1,0),items,ready:!!s.ready};
+  return{cid:String(s.cid||'').slice(0,24),name:clean(s.name),tank:int(s.tank,0,TANKS.length-1,0),char:int(s.char,0,CHARS.length-1,0),items,ready:!!s.ready,tn:cleanTeam(s.tn)};
 }
-function myJoin(){return{t:'join',cid:CID,name:my.name,tank:my.tank,char:my.char,items:my.items,ready:my.ready,slot:slotWish}}
+function myJoin(){return{t:'join',cid:CID,name:my.name,tank:my.tank,char:my.char,items:my.items,ready:my.ready,slot:slotWish,tn:my.tn}}
 function acceptHost(d){
   const ep=int(d.ep,0,1e9,0);if(ep<L.ep)return false;
   if(ep>L.ep||!L.host){L.ep=ep;L.host=String(d.h)}
@@ -906,7 +923,7 @@ function beat(){
   writeRoomDoc(false);
 }
 function makeState(){
-  return{t:'state',h:L.host,ep:L.ep,g:G.g,turn:G.turn,cur:G.cur,n:G.turnAt,wd:+G.wind.dir.toFixed(4),ws:G.wind.str,over:G.over,
+  return{t:'state',h:L.host,ep:L.ep,g:G.g,turn:G.turn,cur:G.cur,n:G.turnAt,wd:+G.wind.dir.toFixed(4),ws:G.wind.str,over:G.over,sur:G.surr,sv:currentSv(),
     left:+Math.max(0,(G.deadline-performance.now())/1000).toFixed(1),
     cl:G.clouds.map(c=>[c.type,c.x,c.y]),
     tk:G.tanks.map(t=>[Math.round(t.hp),+t.pos.x.toFixed(2),+t.pos.z.toFixed(2),t.alive?1:0,t.shield?1:0,t.ssCd,t.used.map(u=>u?1:0).join(''),+t.pos.y.toFixed(2),t.delay])};
@@ -947,7 +964,8 @@ function onMsg(m){
       if(d.g.id===ignoreGame)return;
       if(!d.g.roster.some(p=>p&&!p.bot&&p.cid===CID)){note('Trận đang diễn ra. Bạn sẽ vào được khi ván này kết thúc.');renderLobby();return}
       if(!G||G.id!==d.g.id){gameInit(d.g);show('game')}
-      lastS=d;break}
+      noteSv(d.sv);lastS=d;break}
+    case 'sur':if(isHost()&&G&&d.gid===G.id)hostSur(String(d.cid||''));break;
     case 'shot':if(G&&d.gid===G.id&&d.rec&&acceptHost(d)){lastHost=now;const r=sanRec(d.rec);if(r&&r.i>=G.applied)queue.set(r.i,r)}break;
     case 'log':if(G&&d.gid===G.id&&Array.isArray(d.recs)&&acceptHost(d)){for(const x of d.recs){const r=sanRec(x);if(r&&r.i>=G.applied)queue.set(r.i,r)}}break;
     case 'need':if(isHost()&&G&&d.gid===G.id){const f=int(d.from,0,1e6,0);send({t:'log',h:L.host,ep:L.ep,gid:G.id,recs:G.log.slice(f,f+10)})}break;
@@ -968,6 +986,7 @@ function hostNext(){
   const now=performance.now(),a=aliveCount(0),b=aliveCount(1);
   G.turnAt=G.applied;
   if(!a||!b){G.over=a?0:b?1:2;G.phase='over';newTurnLocal();beat();return}
+  if(Hs.surPass>=0){endBySur();return}
   const T=G.cur<0?0:1-G.tanks[G.cur].team;let k=G.last[T]<0?T*3-1:G.last[T];
   if(G.g.order){k=-1;for(const t of G.tanks)if(t.alive&&(k<0||t.delay<G.tanks[k].delay))k=t.id} // lowest accumulated delay goes next
   else for(let j=0;j<3;j++){k=T*3+((k-T*3+1)%3);if(G.tanks[k].alive)break}
@@ -1004,8 +1023,34 @@ function hostFire(f){
   G.log.push(rec);queue.set(rec.i,rec);
   send({t:'shot',h:L.host,ep:L.ep,gid:G.id,rec});
 }
+// ---------- surrender vote (per team) ----------
+// Any human on a team can call for surrender; it passes when more than half of that team's humans who are still
+// connected agree. The host counts votes and ends the match at the next quiet moment (never mid-shot).
+function surNeed(team){const n=G.tanks.filter(t=>t.team===team&&!t.bot&&present(t.cid)).length;return n?Math.floor(n/2)+1:0}
+function currentSv(){return[0,1].flatMap(k=>[Hs.sur[k].filter(c=>present(c)).length,surNeed(k)])}
+function noteSv(sv){
+  if(!Array.isArray(sv)||!G)return;
+  const v=[0,1,2,3].map(i=>int(sv[i],0,6,0));
+  if(prevSv)for(const k of[0,1])if(v[k*2]>prevSv[k*2])feed(teamName(k)+' bỏ phiếu đầu hàng ('+v[k*2]+'/'+v[k*2+1]+')');
+  prevSv=v;
+}
+function hostSur(cid){
+  if(!G||G.over>=0||Hs.surPass>=0)return;
+  const t=G.tanks.find(x=>!x.bot&&x.cid===cid);if(!t)return;
+  const v=Hs.sur[t.team];if(v.includes(cid))return;v.push(cid);
+  noteSv(currentSv());
+  if(v.filter(c=>present(c)).length>=surNeed(t.team)){Hs.surPass=t.team;if(G.phase==='aim'&&!Hs.fired){endBySur();return}}
+  beat();
+}
+function endBySur(){
+  const team=Hs.surPass;Hs.surPass=-1;
+  G.turnAt=G.applied;G.over=1-team;G.surr=team;G.phase='over';
+  feed(teamName(team)+' đầu hàng');newTurnLocal();beat();
+}
 function hostTick(now){
   if(L.playing&&G){
+    if(G.over<0&&Hs.surPass<0)for(const k of[0,1]){const n=surNeed(k);if(n&&Hs.sur[k].filter(c=>present(c)).length>=n)Hs.surPass=k} // a teammate who left lowers the bar
+    if(Hs.surPass>=0&&G.over<0&&G.phase==='aim'&&!Hs.fired)endBySur();
     if(G.phase==='aim'&&!Hs.fired){
       if(Hs.botAt){if(now>=Hs.botAt)hostFire(Hs.plan)}
       else if(now>G.deadline+4000)hostFire({pw:0});
@@ -1060,7 +1105,7 @@ function planBot(t){
 // ---------- client: apply host state, pump queue ----------
 function applyState(Sx){
   G.turn=int(Sx.turn,0,1e6,G.turn);G.cur=int(Sx.cur,0,5,0);G.turnAt=int(Sx.n,0,1e6,G.applied);
-  setWind(num(Sx.wd,0),clamp(num(Sx.ws,0),0,12));G.over=int(Sx.over,0,2,-1);
+  setWind(num(Sx.wd,0),clamp(num(Sx.ws,0),0,12));G.over=int(Sx.over,0,2,-1);G.surr=int(Sx.sur,0,1,-1);
   if(G.d2)setClouds(sanCl(Sx.cl));
   Sx.tk.slice(0,6).forEach((a,i)=>{
     const t=G.tanks[i];if(!Array.isArray(a))return;
@@ -1079,8 +1124,12 @@ function newTurnLocal(){
   if(G.over>=0){
     $('banner').textContent='Hết trận';
     const mine=me?me.team:0;
-    $('overTitle').textContent=G.over===2?'Hòa':G.over===0?'Đội Xanh thắng!':'Đội Đỏ thắng!';
-    $('overText').textContent=G.over===2?'Cả hai đội cùng bị hạ.':G.over===mine?'Đội bạn đã hạ hết xe của đối thủ.':'Cả đội bạn đã bị hạ. Thử lại và nhớ bù gió kỹ hơn.';
+    $('overTitle').textContent=G.over===2?'Hòa':teamName(G.over)+' thắng!';
+    $('overText').textContent=G.over===2?'Cả hai đội cùng bị hạ.':
+      G.surr>=0?(G.surr===mine?'Đội bạn đã đầu hàng.':teamName(G.surr)+' đã đầu hàng.'):
+      G.over===mine?'Đội bạn đã hạ hết xe của đối thủ.':'Cả đội bạn đã bị hạ. Thử lại và nhớ bù gió kỹ hơn.';
+    $('rematch').hidden=!isHost();
+    $('overNote').textContent=isHost()?(L&&L.code?'Ván mới giữ nguyên người chơi, bản đồ và cài đặt; ai đã rời phòng sẽ do bot thay.':''):'Chờ chủ phòng bắt đầu ván mới, hoặc về phòng chờ.';
     $('over').hidden=false;sfx(G.over===mine?'win':'lose');return;
   }
   const c=G.tanks[G.cur];
@@ -1114,6 +1163,7 @@ function logic(){
   if(isHost())hostTick(now);
   else if(now-netAt>1000){
     netAt=now;
+    if(G&&surVoted===G.id&&G.over<0)send({t:'sur',gid:G.id,cid:CID}); // resend until it lands; the host ignores repeats
     if(screen==='lobby')send(myJoin());
     if(chan&&now-lastHost>5500){
       const order=(L.playing&&G?G.g.roster.filter(p=>p&&!p.bot).map(p=>p.cid):L.slots.filter(Boolean).map(s=>s.cid)).filter(c=>c!==L.host&&present(c));
@@ -1426,6 +1476,14 @@ function drawMini(){
 function updateHud(){
   if(screen!=='game'||!G)return;
   if(!G.d2)drawMini();
+  const sb=$('surr');sb.hidden=!me;
+  if(me){
+    const sv=isHost()?currentSv():(lastS&&Array.isArray(lastS.sv)?lastS.sv:[0,0,0,0]),v=int(sv[me.team*2],0,6,0),nd=int(sv[me.team*2+1],0,6,0);
+    const conf=performance.now()-surConfirm<3000,voted=surVoted===G.id;
+    const txt=voted?'Đã xin đầu hàng '+v+'/'+nd:conf?'Bấm lần nữa để đầu hàng':v>0?'Đầu hàng '+v+'/'+nd:'Đầu hàng';
+    if(sb.textContent!==txt)sb.textContent=txt;
+    sb.disabled=G.over>=0||voted;sb.classList.toggle('warn',conf||(v>0&&!voted));
+  }
   for(const c of G.clouds){
     if(c.eaten)continue;
     tmp.set(c.x,c.y+8,0).project(camera);
@@ -1511,6 +1569,9 @@ function renderLobby(){
   $('lobTitle').innerHTML='';$('lobTitle').append(solo?'Chơi một mình':'Phòng ');
   if(!solo){const c=document.createElement('span');c.className='code';c.textContent=L.code;$('lobTitle').append(c)}
   for(let team=0;team<2;team++){
+    const cap=L.slots[team*3],mineCap=!!cap&&cap.cid===CID,inp=$('tnIn'+team),txt=$('tnText'+team);
+    txt.hidden=mineCap;inp.hidden=!mineCap;txt.textContent=lobbyTeam(team);
+    if(mineCap&&document.activeElement!==inp)inp.value=my.tn;
     const el=$('team'+team);el.innerHTML='';el.style.cssText='display:flex;flex-direction:column;gap:6px';
     for(let j=0;j<3;j++){
       const i=team*3+j,s=L.slots[i],row=document.createElement('div'),a=document.createElement('div');row.className='slot';
@@ -1556,6 +1617,23 @@ function previewMap(i){scene.fog.near=260;scene.fog.far=720;if(land2){scene.remo
 $('nick').value=my.name==='Người chơi'?'':my.name;
 $('nick').addEventListener('change',e=>{my.name=clean(e.target.value);store.set('dp-name',my.name)});
 $('ready').addEventListener('click',()=>{my.ready=!my.ready;send(myJoin());renderLobby()});
+[0,1].forEach(k=>{
+  const inp=$('tnIn'+k);
+  inp.addEventListener('change',()=>{my.tn=cleanTeam(inp.value);store.set('dp-tname',my.tn);if(isHost())hostJoin(myJoin());else send(myJoin());renderLobby()});
+  inp.addEventListener('keydown',e=>{if(e.key==='Enter')inp.blur()});
+});
+$('surr').addEventListener('click',()=>{
+  if(!G||!me||G.over>=0||surVoted===G.id)return;
+  const now=performance.now();
+  if(now-surConfirm>3000){surConfirm=now;return} // first tap arms it, a second tap within 3 s confirms
+  surConfirm=0;surVoted=G.id;
+  if(isHost())hostSur(CID);else send({t:'sur',gid:G.id,cid:CID});
+});
+$('rematch').addEventListener('click',()=>{
+  if(!L||!isHost())return;
+  L.slots=L.slots.map(s=>s&&(s.cid===CID||present(s.cid))?s:null);
+  L.playing=false;clearWorld();G=null;me=null;hostStart();
+});
 $('chatSend').addEventListener('click',sendChat);
 $('chatIn').addEventListener('keydown',e=>{if(e.key==='Enter')sendChat()});
 function sendChat(){const v=$('chatIn').value.trim().slice(0,140);if(!v)return;$('chatIn').value='';addChat(my.name,v);send({t:'chat',name:my.name,text:v})}
@@ -1601,7 +1679,7 @@ function hostStart(){
   if(!isHost()||L.playing)return;
   const roster=L.slots.map((s,i)=>s?{cid:s.cid,name:s.name,tank:s.tank,char:s.char,items:s.items,bot:false}
     :{cid:'',name:'Bot '+(i<3?'Xanh ':'Đỏ ')+(i%3+1),tank:(rnd()*TANKS.length)|0,char:(rnd()*CHARS.length)|0,items:[],bot:true});
-  const g={id:Math.random().toString(36).slice(2,9),seed:(rnd()*1e9)|0,map:L.map,mode:L.mode,order:L.order,roster};
+  const g={id:Math.random().toString(36).slice(2,9),seed:(rnd()*1e9)|0,map:L.map,mode:L.mode,order:L.order,roster,teams:[lobbyTeam(0),lobbyTeam(1)]};
   L.playing=true;gameInit(g);show('game');beat();
 }
 $('mkRoom').addEventListener('click',createRoom);
