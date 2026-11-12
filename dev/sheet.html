@@ -1,0 +1,14 @@
+<!doctype html>
+<meta charset="utf8">
+<title>Asset sheet</title>
+<style>
+body{margin:0;padding:12px;font:12px system-ui;background:#cfd6e6}
+.g{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+figure{margin:0;padding:6px;background:repeating-conic-gradient(#fff 0 25%,#e9edf5 0 50%) 0 0/16px 16px;border-radius:6px;text-align:center}
+img{display:block;max-width:260px;max-height:200px}
+</style>
+<div class="g" id="g"></div>
+<script>
+const n=['b01','b02','b03','b04','b05','b11','b12','b13','b14','b15','tr1','tr2','tr3','tr6','wh','tu1','tu2','tu3','tu4','bu1','bu2','bu3','bu4','bu5','bu6','ex2','ex3','ex4','ex8','ex9','ex12','cl1','cl2','cl3','cl4','bg0','bg1','bg2'];
+for(const k of n){const f=document.createElement('figure'),i=new Image();i.src='../assets/img/'+k+'.svg';if(/^bg/.test(k))i.style.maxWidth='240px';f.append(i,k);document.getElementById('g').append(f)}
+</script>

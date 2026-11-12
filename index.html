@@ -239,7 +239,7 @@ button:disabled{opacity:.4;cursor:default}
     <h2>Phòng đang mở</h2>
     <div class="rooms" id="rooms"><span class="note" id="roomsNote">Đang kết nối…</span></div>
     <p class="note" id="menuMsg"></p>
-    <p class="note deskNote">Hình xe, đạn, vụ nổ, mây, phông nền và âm thanh ở chế độ 2D là tài nguyên miễn phí của Kenney (kenney.nl), giấy phép CC0.</p>
+    <p class="note deskNote">Toàn bộ hình và âm thanh ở chế độ 2D được game tự vẽ và tự tổng hợp bằng code, theo phong cách Bright.</p>
     <p class="note deskNote">Máy tính: kéo chuột hoặc phím mũi tên để ngắm (giữ Shift để chỉnh tinh), W/S chạy xe, 1/2/3 đổi đạn, giữ Space để nạp lực rồi thả để bắn.</p>
     <p class="note">Điện thoại: gạt cần ở góc trái để chỉnh góc và lực, bấm BẮN ở góc phải. Trận đấu tự hiển thị theo chiều ngang.</p>
   </div>
@@ -343,7 +343,10 @@ const BOLT={name:'Tia sét',dmg:180,r:6,windK:0};
 [{ang:[15,72],dl:1.1,dig:1.1},{ang:[10,80],dl:.9,dig:.9},{ang:[20,68],dl:1.2,dig:1},{ang:[10,78],dl:.95,dig:.8},{ang:[15,75],dl:1,dig:1.3},{ang:[5,70],dl:1,dig:.7},{ang:[20,75],dl:1.1,dig:1},{ang:[10,82],dl:.9,dig:.9}]
   .forEach((x,i)=>Object.assign(TANKS[i],x));
 // 2D ground per map: dig = how soft it is; bed = height of the bedrock layer that can never be dug (-99 = none).
-[{dig:1,bed:3,soil:'Đất mềm, dễ đào; dưới cùng là đá nền không đào được'},{dig:.65,bed:3,soil:'Đá cứng, khó đào; dưới cùng là đá nền không đào được'},{dig:.8,bed:-99,soil:'Băng hơi cứng; đảo không có đá nền nên đào thủng là rơi xuống nước'}]
+// cols2/burn2/sky2: the 2D "Bright" palette (shore, top layer, middle, deep); the 3D colours above stay as they were.
+[{dig:1,bed:3,soil:'Đất mềm, dễ đào; dưới cùng là đá nền không đào được',cols2:[0xffe08a,0x4fdc4a,0xd08f4f,0xa8683a],burn2:0x6e3f22,sky2:0x5cc8ff},
+ {dig:.65,bed:3,soil:'Đá cứng, khó đào; dưới cùng là đá nền không đào được',cols2:[0xffe08a,0xffb347,0xec7f3e,0xb9562d],burn2:0x7a3b22,sky2:0xffbe5c},
+ {dig:.8,bed:-99,soil:'Băng hơi cứng; đảo không có đá nền nên đào thủng là rơi xuống nước',cols2:[0xd6f5ff,0xffffff,0x9fe3ff,0x5cc2f0],burn2:0x3d8fc0,sky2:0x6fd8ff}]
   .forEach((x,i)=>Object.assign(MAPS[i],x));
 CHARS.push({name:'Chú Đào',desc:'Hố nổ rộng hơn 25%',dig:1.25},{name:'Em Nhanh',desc:'Giảm 15% độ trễ lượt',dl:.85});
 ITEMS.push({k:'dig',name:'Mũi khoan',desc:'Hố nổ rộng gấp đôi, dễ khoét đất dưới chân địch'});
@@ -448,22 +451,32 @@ function crater(x,z,R){
   pa.needsUpdate=true;ca.needsUpdate=true;
 }
 
-// ---------- art files (CC0 by Kenney, kenney.nl), published next to the page; 2D mode only ----------
-// If any image fails to load (for example the page opened without its assets folder), artOK stays false
-// and 2D falls back to the built-in low-poly models.
-const texs={};let artOK=false;
+// ---------- art files: the game's own "Bright" style SVGs (tools/make_assets.py), 2D mode only ----------
+// Sprites are exported at ART_SCALE times their layout size; each is rasterised once onto a canvas (which
+// works the same in every browser) and used as a texture. If any image fails to load (for example the page
+// opened without its assets folder), artOK stays false and 2D falls back to the built-in low-poly models.
+const texs={},ART_SCALE=4;let artOK=false;
 (function(){
   const names=['tr1','tr2','tr3','tr6','wh','tu1','tu2','tu3','tu4','cl1','cl2','cl3','cl4','bu1','bu2','bu3','bu4','bu5','bu6','ex2','ex3','ex4','ex8','ex9','ex12','bg0','bg1','bg2'];
   for(const t of[0,1])for(let n=1;n<=5;n++)names.push('b'+t+n);
-  let left=names.length,bad=false;const ld=new THREE.TextureLoader();
-  names.forEach(n=>{texs[n]=ld.load('assets/img/'+n+'.png',()=>{if(--left===0&&!bad)artOK=true},undefined,()=>{bad=true})});
+  let left=names.length,bad=false;
+  names.forEach(n=>{
+    const tex=new THREE.Texture(),img=new Image();texs[n]=tex;
+    img.onload=()=>{
+      const c=document.createElement('canvas');c.width=img.naturalWidth||img.width;c.height=img.naturalHeight||img.height;
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);tex.image=c;tex.needsUpdate=true;
+      if(--left===0&&!bad)artOK=true;
+    };
+    img.onerror=()=>{bad=true};
+    img.src='assets/img/'+n+'.svg';
+  });
 })();
 function plane(name,w,h){return new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshBasicMaterial({map:texs[name],transparent:true,depthWrite:false}))}
 // per tank type: body shape, barrel image, tracks image ('wh' = two wheels), size factor
 const TANK_ART=[[1,'tu2','tr1',1.1],[4,'tu1','wh',.95],[3,'tu4','tr3',1.2],[2,'tu1','tr2',.95],[5,'tu3','tr6',1.05],[2,'tu4','tr2',1],[3,'tu2','tr1',1.12],[4,'tu4','wh',.9]];
 const BULLET_ART=[3,1,4,2,6,5,3,2],EX_SEQ=['ex2','ex3','ex4','ex8','ex9','ex12'];
 function buildTank2(type,team){
-  const A=TANK_ART[type],T=TANKS[type],u=.068*A[3],g=new THREE.Group(),dim=n=>[texs[n].image.width*u,texs[n].image.height*u];
+  const A=TANK_ART[type],T=TANKS[type],u=.068*A[3],g=new THREE.Group(),dim=n=>[texs[n].image.width/ART_SCALE*u,texs[n].image.height/ART_SCALE*u];
   const bn='b'+team+A[0],bd=dim(bn),bw=bd[0],bh=bd[1];let base;
   if(A[2]==='wh'){const wd=dim('wh');for(const sx of[-1,1]){const w=plane('wh',wd[0],wd[1]);w.position.set(sx*bw*.28,wd[1]/2,.3);w.renderOrder=2;g.add(w)}base=wd[1]*.45}
   else{const td=dim(A[2]),tr=plane(A[2],td[0],td[1]);tr.position.set(0,td[1]/2,.3);tr.renderOrder=2;g.add(tr);base=td[1]*.5}
@@ -513,12 +526,21 @@ function genLand(mapId,seed,pads){
     }
   }
   const cv=document.createElement('canvas');cv.width=LW;cv.height=LH;landCtx=cv.getContext('2d');
-  const img=landCtx.createImageData(LW,LH),m=MAPS[mapId],hex=h=>[h>>16&255,h>>8&255,h&255],C=m.cols.map(hex);
+  // Bright style: a dark ink outline (3 px) around every edge of the land, a light rim on top of the surface
+  // layer, flat bands below and bedrock in a cool purple with a brick pattern.
+  const img=landCtx.createImageData(LW,LH),m=MAPS[mapId],hex=h=>[h>>16&255,h>>8&255,h&255],C=m.cols2.map(hex),INKC=[29,26,51],LITE=C[1].map(v=>Math.min(255,v+60));
+  const at=(x,y)=>x>=0&&y>=0&&x<LW&&y<LH&&mask[y*LW+x]===1,bedY=(m.bed-LY0)*PX;
   for(let py=0;py<LH;py++)for(let px=0;px<LW;px++){
     if(!mask[py*LW+px])continue;
     const up=k=>py+k>=LH||!mask[(py+k)*LW+px];
-    const col=py<(m.bed-LY0)*PX?[92,92,104]:up(5)?C[1]:up(26)?C[2]:py<(1.2-LY0)*PX?C[0]:C[3],sh=((px*7+py*13)%5)*3-6,o=((LH-1-py)*LW+px)*4;
-    img.data[o]=clamp(col[0]+sh,0,255);img.data[o+1]=clamp(col[1]+sh,0,255);img.data[o+2]=clamp(col[2]+sh,0,255);img.data[o+3]=255;
+    let edge=false;for(let k=1;k<=3&&!edge;k++)edge=!at(px+k,py)||!at(px-k,py)||!at(px,py+k)||(py-k>=0&&!at(px,py-k));
+    let col;
+    if(py<bedY)col=(py%10<1||((px+(((py/10)|0)%2)*12)%24<1))?[78,72,118]:[107,100,150];
+    else if(edge)col=INKC;
+    else if(up(6))col=LITE;
+    else col=up(14)?C[1]:up(34)?C[2]:py<(1.2-LY0)*PX?C[0]:C[3];
+    const o=((LH-1-py)*LW+px)*4;
+    img.data[o]=col[0];img.data[o+1]=col[1];img.data[o+2]=col[2];img.data[o+3]=255;
   }
   landCtx.putImageData(img,0,0);
   if(land2){scene.remove(land2);land2.geometry.dispose();landTex.dispose()}
@@ -532,8 +554,9 @@ function crater2(x,y,R){
     for(let px=Math.max(0,Math.floor(cx-r));px<=Math.min(LW-1,Math.ceil(cx+r));px++){
       const dx=px+.5-cx,dy=py+.5-cy;if(dx*dx+dy*dy<=r2)mask[py*LW+px]=0;
     }
-  const g=landCtx;g.save();g.beginPath();g.rect(0,0,LW,LH-bed);g.clip();g.globalCompositeOperation='source-atop';g.fillStyle='#'+curMap.burn.toString(16).padStart(6,'0');
-  g.beginPath();g.arc(cx,LH-cy,r+5,0,7);g.fill();
+  const g=landCtx;g.save();g.beginPath();g.rect(0,0,LW,LH-bed);g.clip();g.globalCompositeOperation='source-atop';g.fillStyle='#'+curMap.burn2.toString(16).padStart(6,'0');
+  g.beginPath();g.arc(cx,LH-cy,r+7,0,7);g.fill();
+  g.fillStyle='#1d1a33';g.beginPath();g.arc(cx,LH-cy,r+3,0,7);g.fill(); // ink rim, like every other edge
   g.globalCompositeOperation='destination-out';g.beginPath();g.arc(cx,LH-cy,r,0,7);g.fill();
   g.restore();g.globalCompositeOperation='source-over';landTex.needsUpdate=true;
 }
@@ -572,20 +595,50 @@ let effects=[],trails=[],lastImpact=null,myImpact=null,charging=false,power=0,my
 const queue=new Map();let lastS=null,lastNeed=0,pan2d=0,shake=0;
 // ---------- sound (synthesised, no files), kill feed ----------
 let actx=null,muted=store.get('dp-mute')==='1';
-// Recorded sounds (CC0 by Kenney) load from the assets folder; anything missing or undecodable falls back to the synth below.
-const sndRaw={},sndBuf={};
-['fire','boom1','boom2','boom3','big','hit','cloud','turn','click','win','lose'].forEach(n=>{
-  fetch('assets/sfx/'+n+'.ogg').then(r=>r.ok?r.arrayBuffer():null).then(a=>{if(a){sndRaw[n]=a;decodeSounds()}}).catch(()=>{});
-});
-function decodeSounds(){
-  if(!actx)return;
-  for(const n of Object.keys(sndRaw)){const a=sndRaw[n];delete sndRaw[n];try{actx.decodeAudioData(a,b=>{sndBuf[n]=b},()=>{})}catch(e){}}
+// All sounds are synthesised here, sample by sample, the first time audio is allowed (no sound files).
+// Bright style: punchy, short and cheerful; each buffer is normalised and played at its own volume.
+const sndBuf={};
+function buildSounds(){
+  if(!actx||sndBuf.fire)return;
+  const sr=actx.sampleRate,TAU=Math.PI*2;
+  const mk=(name,dur,fill)=>{
+    const n=Math.floor(dur*sr),b=actx.createBuffer(1,n,sr),a=b.getChannelData(0);fill(a,n);
+    let m=0;for(let i=0;i<n;i++)m=Math.max(m,Math.abs(a[i]));if(m>0)for(let i=0;i<n;i++)a[i]/=m;
+    for(let i=0;i<Math.min(n,64);i++)a[n-1-i]*=i/64; // fade the tail so nothing clicks
+    sndBuf[name]=b;
+  };
+  // bell-like note with a soft attack; h3 adds an odd harmonic for a brighter, toy-like tone
+  const note=(a,t0,dur,f,amp,dec,h3)=>{
+    const s=Math.floor(t0*sr),e=Math.min(a.length,Math.floor((t0+dur)*sr));
+    for(let i=s;i<e;i++){const t=(i-s)/sr,env=Math.min(1,t*300)*Math.exp(-t*dec);a[i]+=amp*env*(Math.sin(TAU*f*t)+(h3||0)*Math.sin(TAU*3*f*t)/3)}
+  };
+  const boom=(name,dur,f0,f1,dec,ndec,crack)=>mk(name,dur,(a,n)=>{
+    let ph=0,lp=0,lp2=0;
+    for(let i=0;i<n;i++){
+      const t=i/sr,f=f1+(f0-f1)*Math.exp(-t*7);ph+=TAU*f/sr;
+      lp+=(Math.random()*2-1-lp)*(0.05+0.4*Math.exp(-t*9));lp2+=(lp-lp2)*.3;
+      a[i]=Math.sin(ph)*Math.exp(-t*dec)*1.1+lp2*Math.exp(-t*ndec)*1.6+(crack&&Math.random()<.004*Math.exp(-t*3)?(Math.random()-.5)*1.4:0);
+    }
+  });
+  mk('fire',.32,(a,n)=>{let p1=0,p2=0,lp=0;for(let i=0;i<n;i++){const t=i/sr;
+    p1+=TAU*(70+160*Math.exp(-t*24))/sr;p2+=TAU*(320+700*Math.exp(-t*40))/sr;lp+=(Math.random()*2-1-lp)*(.04+.3*Math.exp(-t*30));
+    a[i]=Math.sin(p1)*Math.exp(-t*11)+lp*Math.exp(-t*22)*1.3+.28*Math.sign(Math.sin(p2))*Math.exp(-t*34)}});
+  boom('boom1',.9,90,40,5,4,true);boom('boom2',.9,78,34,4.4,3.6,true);boom('boom3',.85,104,46,5.6,4.6,true);
+  boom('big',1.5,62,24,2.6,2.2,true);
+  mk('hit',.32,(a,n)=>{for(let i=0;i<n;i++){const t=i/sr;let s=0;for(const[f,d]of[[523,9],[1247,13],[1893,17],[2711,22]])s+=Math.sin(TAU*f*t)*Math.exp(-t*d);
+    a[i]=s+(Math.random()*2-1)*Math.exp(-t*90)}});
+  mk('cloud',.62,a=>{[1047,1319,1568,2093].forEach((f,k)=>note(a,k*.07,.45,f,1,9,.4))});
+  mk('turn',.42,a=>{note(a,0,.2,659,1,14,.6);note(a,.12,.3,988,1,10,.6)});
+  mk('click',.05,(a,n)=>{for(let i=0;i<n;i++){const t=i/sr;a[i]=Math.sin(TAU*1900*t)*Math.exp(-t*120)+(Math.random()*2-1)*.2*Math.exp(-t*300)}});
+  mk('win',1.25,a=>{[523,659,784].forEach((f,k)=>note(a,k*.13,.3,f,1,8,.8));note(a,.42,.8,1047,1.1,3.2,.8);note(a,.42,.8,784,.6,3.2,.4)});
+  mk('lose',1.15,(a,n)=>{note(a,0,.3,494,1,7,.5);note(a,.24,.3,440,1,7,.5);
+    const s=Math.floor(.5*sr);for(let i=s;i<n;i++){const t=(i-s)/sr,f=392*(1-.06*t)+6*Math.sin(TAU*5*t);a[i]+=Math.min(1,t*200)*Math.exp(-t*2.6)*(Math.sin(TAU*f*t)+.25*Math.sin(TAU*3*f*t))}});
 }
 function play(n,vol,rate){
   const b=sndBuf[n];if(!b)return false;
   const s=actx.createBufferSource(),g=actx.createGain();s.buffer=b;s.playbackRate.value=rate||1;g.gain.value=vol;s.connect(g);g.connect(actx.destination);s.start();return true;
 }
-function wake(){if(!actx){try{actx=new(window.AudioContext||window.webkitAudioContext)()}catch(e){}}if(actx&&actx.state==='suspended')actx.resume().catch(()=>{});decodeSounds()}
+function wake(){if(!actx){try{actx=new(window.AudioContext||window.webkitAudioContext)()}catch(e){}}if(actx&&actx.state==='suspended')actx.resume().catch(()=>{});try{buildSounds()}catch(e){console.warn('sound synthesis failed',e)}}
 document.addEventListener('click',e=>{if(e.target&&e.target.closest&&e.target.closest('button'))sfx('click')});
 addEventListener('pointerdown',wake,{passive:true});addEventListener('keydown',wake);
 function tone(f0,f1,dur,type,vol){
@@ -604,14 +657,14 @@ function sfx(k){
   if(k!=='click'&&(quiet||screen!=='game'))return;
   try{
     if(touchUI&&navigator.vibrate&&(k==='fire'||k==='hit'||k==='die'))navigator.vibrate(k==='fire'?15:k==='hit'?35:[40,40,80]);
-    if(k==='click')play('click',.3);
-    else if(k==='fire'){if(!play('fire',.5,1.6)){hiss(.25,.35,1800);tone(180,60,.25,'square',.12)}}
+    if(k==='click')play('click',.18);
+    else if(k==='fire'){if(!play('fire',.5,.95+Math.random()*.1)){hiss(.25,.35,1800);tone(180,60,.25,'square',.12)}}
     else if(k==='boom'){if(!play('boom'+(1+((Math.random()*3)|0)),.6)){hiss(.7,.5,600);tone(90,30,.6,'sine',.35)}}
-    else if(k==='turn'){if(!play('turn',.6)){tone(660,660,.1,'triangle',.15);setTimeout(()=>{try{tone(880,880,.16,'triangle',.15)}catch(e){}},110)}}
-    else if(k==='cloud'){if(!play('cloud',.6))tone(880,1760,.3,'sine',.14)}
-    else if(k==='die'){if(!play('big',.8,.8))tone(300,50,.8,'sawtooth',.16)}
-    else if(k==='hit')play('hit',.5);
-    else if(k==='win'||k==='lose')play(k,.6);
+    else if(k==='turn'){if(!play('turn',.35)){tone(660,660,.1,'triangle',.15);setTimeout(()=>{try{tone(880,880,.16,'triangle',.15)}catch(e){}},110)}}
+    else if(k==='cloud'){if(!play('cloud',.35))tone(880,1760,.3,'sine',.14)}
+    else if(k==='die'){if(!play('big',.75))tone(300,50,.8,'sawtooth',.16)}
+    else if(k==='hit')play('hit',.3);
+    else if(k==='win'||k==='lose')play(k,.4);
   }catch(e){}
 }
 function feed(text){
@@ -662,7 +715,7 @@ function gameInit(g){
   if(flat){
     setSky(mapId);if(terrain)terrain.visible=false;genLand(mapId,ts,pads);
     if(artOK){ // far backdrop, three tiles side by side
-      scene.background.setHex(0xd5edf7);scene.fog.color.setHex(0xd5edf7);
+      scene.background.setHex(MAPS[mapId].sky2);scene.fog.color.setHex(MAPS[mapId].sky2);
       for(const k of[-1,0,1]){const b=plane('bg'+mapId,600,600);b.material.transparent=false;b.position.set(k*600,87,-250);b.renderOrder=-10;world.add(b)}
     }
   }
@@ -715,7 +768,7 @@ function addShell(s){
   if(G.d2){s.p.z=0;s.v.z=0}
   if(!quiet){
     if(G.d2&&artOK){
-      const n='bu'+(s.def===BOLT?5:BULLET_ART[s.owner.type]),im=texs[n].image,k=s.child?.07:.11;
+      const n='bu'+(s.def===BOLT?5:BULLET_ART[s.owner.type]),im=texs[n].image,k=(s.child?.07:.11)/ART_SCALE;
       s.mesh=plane(n,im.width*k,im.height*k);s.mesh.material.depthTest=false;s.mesh.renderOrder=6;s.mesh.userData.sprite=true;
     }else s.mesh=new THREE.Mesh(shellGeo,shellMat);
     s.mesh.position.copy(s.p);s.mesh.visible=!s.delay;scene.add(s.mesh);
