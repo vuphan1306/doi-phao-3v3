@@ -924,7 +924,13 @@ function makeState(){
     cl:G.clouds.map(c=>[c.type,c.x,c.y]),
     tk:G.tanks.map(t=>[Math.round(t.hp),+t.pos.x.toFixed(2),+t.pos.z.toFixed(2),t.alive?1:0,t.shield?1:0,t.ssCd,t.used.map(u=>u?1:0).join(''),+t.pos.y.toFixed(2),t.delay])};
 }
+let relayAt=0;
 function writeRoomDoc(force){
+  if(viaRelay){
+    const now=Date.now();
+    if(L&&L.code&&isHost()&&(force||now-relayAt>2500)){relayAt=now;roomCap.rooms.announce({code:L.code,name:my.name,map:L.map,mode:L.mode,players:L.slots.filter(Boolean).length,playing:!!L.playing})}
+    return;
+  }
   if(!dbCap||!L||!L.code||!isHost())return;
   const now=Date.now(),players=L.slots.filter(Boolean).length,key=[L.map,L.mode,players,L.playing].join('|');
   if(!force&&key===lastDoc&&now-lastDocAt<25000)return;
@@ -1596,6 +1602,7 @@ function soloRoom(){newRoomState('',true);chan=null;my.ready=true;hostJoin(myJoi
 function leaveRoom(){
   if(L&&chan){
     send({t:'bye',cid:CID});
+    if(viaRelay&&isHost()&&L.code&&!L.slots.some(s=>s&&s.cid!==CID))roomCap.rooms.announce({code:L.code,gone:true});
     if(isHost()&&dbCap&&L.code&&!L.slots.some(s=>s&&s.cid!==CID)){const c=L.code;dbq=dbq.then(()=>dbCap.doc('rooms/'+c).delete()).catch(()=>{})}
     unsub.forEach(u=>{try{u()}catch(e){}});unsub=[];
     const c=chan;setTimeout(()=>{try{c.leave().catch(()=>{})}catch(e){}},200);
@@ -1646,7 +1653,13 @@ async function relayRoom(){
     client=window.mqtt.connect('wss://broker.emqx.io:8084/mqtt',{clientId:'dp-'+CID+'-'+Math.random().toString(36).slice(2,6),clean:true,reconnectPeriod:2000,connectTimeout:8000});
     await new Promise((res,rej)=>{const t=setTimeout(()=>rej(new Error('timeout')),9000);client.once('connect',()=>{clearTimeout(t);res()});client.once('error',e=>{clearTimeout(t);rej(e)})});
   }catch(e){try{client&&client.end(true)}catch(_){}return null}
-  return{join(name){
+  // Room list: hosts announce their open room on one shared topic every few seconds; menus listen and forget
+  // rooms they have not heard from for a while (nothing is stored on the relay).
+  const LIST='doiphao/v1/rooms';
+  return{rooms:{
+    announce(body){try{client.publish(LIST,JSON.stringify(body))}catch(e){}},
+    watch(cb){client.subscribe(LIST);client.on('message',(t,p)=>{if(t!==LIST)return;try{cb(JSON.parse(p.toString()))}catch(e){}})}
+  },join(name){
     const topic='doiphao/v1/'+name,subs=[],peers=new Map();let pres={};
     const onMessage=(t,payload)=>{
       if(t!==topic)return;let m;try{m=JSON.parse(payload.toString())}catch(e){return}
@@ -1668,13 +1681,24 @@ async function relayRoom(){
 (async function connect(){
   try{if(window.claude&&window.claude.use){roomCap=await window.claude.use('room');dbCap=await window.claude.use('db')}}catch(e){}
   if(!roomCap&&!window.claude){$('menuMsg').textContent='Đang kết nối máy chủ chơi online…';roomCap=await relayRoom();viaRelay=!!roomCap}
-  if(viaRelay){$('mkRoom').disabled=false;$('joinCode').disabled=false;$('menuMsg').textContent='Chơi online qua máy chủ chuyển tiếp công cộng: tạo phòng rồi gửi mã 4 chữ cho bạn bè. Đừng gửi thông tin riêng tư trong ô trò chuyện.'}
+  if(viaRelay){$('mkRoom').disabled=false;$('joinCode').disabled=false;$('menuMsg').textContent='Chơi online qua máy chủ chuyển tiếp công cộng: tạo phòng, người khác sẽ thấy phòng trong danh sách hoặc vào bằng mã 4 chữ. Đừng gửi thông tin riêng tư trong ô trò chuyện.';
+    const seen=new Map(),draw=()=>{
+      if(screen!=='menu')return;
+      const now=Date.now();for(const[k,v]of seen)if(now-v.at>9000)seen.delete(k);
+      renderRooms([...seen.values()].map(v=>({data:()=>Object.assign({},v.body,{ts:now})})));
+    };
+    roomCap.rooms.watch(b=>{
+      if(!b||typeof b!=='object')return;const code=String(b.code||'').slice(0,8);if(!code)return;
+      if(b.gone)seen.delete(code);else seen.set(code,{body:b,at:Date.now()});draw();
+    });
+    setInterval(draw,3000);draw();
+  }
   else if(roomCap){$('mkRoom').disabled=false;$('joinCode').disabled=false}
   else $('menuMsg').textContent='Chơi online chỉ dùng được khi mở từ link artifact, đã đăng nhập claude.ai và được chủ artifact cấp quyền tương tác. Bạn vẫn chơi một mình với bot được.';
   if(dbCap&&roomCap){
     const timer=setTimeout(()=>{$('roomsNote')&&($('roomsNote').textContent='Chưa tải được danh sách phòng. Bạn vẫn vào được bằng mã.')},10000);
     try{dbCap.collection('rooms').onSnapshot(s=>{clearTimeout(timer);renderRooms(s.docs)},()=>{clearTimeout(timer);$('rooms').textContent='Không tải được danh sách phòng. Bạn vẫn vào được bằng mã.'})}catch(e){}
-  }else{$('rooms').innerHTML='';const s=document.createElement('span');s.className='note';s.textContent=roomCap?'Không có danh sách phòng. Bạn vẫn vào được bằng mã.':'Danh sách phòng chỉ hiện khi chơi online.';$('rooms').appendChild(s)}
+  }else if(!viaRelay){$('rooms').innerHTML='';const s=document.createElement('span');s.className='note';s.textContent=roomCap?'Không có danh sách phòng. Bạn vẫn vào được bằng mã.':'Danh sách phòng chỉ hiện khi chơi online.';$('rooms').appendChild(s)}
 })();
 addEventListener('pagehide',()=>{if(L&&chan)send({t:'bye',cid:CID})});
 
